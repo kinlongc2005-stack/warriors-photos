@@ -1,31 +1,69 @@
 "use client";
+import { useState } from "react";
 
 export default function AdminPage() {
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!file) return;
+
+    setLoading(true);
+    setMessage("Uploading image...");
+
+    // 1) Upload image to Vercel Blob
+    const uploadForm = new FormData();
+    uploadForm.append("file", file);
+
+    const uploadRes = await fetch("/api/upload", {
+      method: "POST",
+      body: uploadForm,
+    });
+
+    const { url } = await uploadRes.json();
+    setMessage("Image uploaded. Generating face embedding...");
+
+    // 2) Generate vector using embed API
+    const embedRes = await fetch("/api/embed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: url }),
+    });
+
+    const { vector } = await embedRes.json();
+    setMessage("Embedding created. Saving to database...");
+
+    // 3) Save URL + vector to Postgres
+    const saveRes = await fetch("/api/save-face", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, vector }),
+    });
+
+    const result = await saveRes.json();
+
+    setLoading(false);
+    setMessage("Upload complete! Photo ID: " + result.photo_id);
+  }
+
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#1d4ed8" }}>
-        Admin Panel
-      </h1>
+    <div style={{ padding: 40 }}>
+      <h1>Admin Upload</h1>
 
-      <p style={{ marginTop: "12px" }}>
-        Upload photos into folders. The system will auto-detect faces and generate vectors.
-      </p>
-
-      <div style={{ marginTop: "30px" }}>
+      <form onSubmit={handleSubmit}>
         <input
           type="file"
-          multiple
           accept="image/*"
-          style={{ marginBottom: "20px" }}
+          onChange={(e) => setFile(e.target.files[0])}
         />
-
-        <button
-          className="btn-primary"
-          style={{ padding: "10px 20px" }}
-        >
-          Upload Photos
+        <button disabled={loading} type="submit">
+          {loading ? "Processing..." : "Upload"}
         </button>
-      </div>
+      </form>
+
+      {message && <p>{message}</p>}
     </div>
   );
 }
